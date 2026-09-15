@@ -18,9 +18,18 @@ TRAFIKVERKET_API_URL = "https://api.trafikinfo.trafikverket.se/v2/data.json"
 MAKE_WEBHOOK_URL = os.environ.get("MAKE_WEBHOOK_URL")
 TRAFIKVERKET_API_KEY = os.environ.get("TRAFIKVERKET_API_KEY")
 
-# Bevakningsområde
-TARGET_LOCATIONS = ["arvika", "eda", "årjäng", "värmland"]
-TARGET_MUNICIPALITIES = ["Arvika", "Eda", "Årjäng"]
+# Alla orter, byar och knutpunkter i Arvika, Eda och Årjängs kommuner + Värmland
+TARGET_LOCATIONS = [
+    # Kommuner & Län
+    "arvika", "eda", "årjäng", "värmland",
+    # Arvika kommun
+    "jössefors", "klässbol", "sulvik", "edane", "glava", 
+    "gunnarsskog", "mangskog", "ottebol", "brunskog", "högboda",
+    # Eda kommun
+    "charlottenberg", "koppom", "åmotfors", "adolfsfors", "skillingmark", "riksgränsen",
+    # Årjängs kommun
+    "töcksfors", "lennartsfors", "karlanda", "svensbyn", "blomskog", "sillerud", "holmedal"
+]
 
 seen_police_ids = set()
 seen_trafikverket_ids = set()
@@ -106,7 +115,7 @@ def check_trafikverket_events():
                 time.sleep(10)
                 continue
 
-            # XML-fråga för att fånga olyckor/händelser i Värmlands län (CountyNo 17)
+            # Hämtar alla aktuella händelser i Värmlands län (CountyNo 17)
             xml_query = f"""
             <REQUEST>
               <LOGIN authenticationkey="{TRAFIKVERKET_API_KEY}" />
@@ -153,7 +162,7 @@ def check_trafikverket_events():
                         details = dev.get("Details", "")
                         location = dev.get("LocationDescriptor", "")
 
-                        # Matchar orter eller kommuner i ditt område
+                        # Matchar mot alla orter och vägsträckor i dina tre kommuner
                         combined_text = f"{header} {details} {location}"
                         is_match = matches_keyword(combined_text)
 
@@ -182,7 +191,7 @@ def check_trafikverket_events():
         except Exception as e:
             print(f"Fel vid Trafikverkshämtning: {e}")
 
-        time.sleep(60)  # Kollar Trafikverket en gång i minuten
+        time.sleep(60)
 
 # --- STARTA TRÅDAR ---
 t1 = threading.Thread(target=check_police_events, daemon=True)
