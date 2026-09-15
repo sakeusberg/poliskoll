@@ -12,34 +12,31 @@ def health_check():
     return "Arvikamagasinets Polislyssnare är igång!", 200
 
 POLISEN_API_URL = "https://polisen.se/api/events"
-
-# Hämtar länken säkert från Renders inställningar
 MAKE_WEBHOOK_URL = os.environ.get("MAKE_WEBHOOK_URL")
 
-# Specifika kommuner och orter i bevakningsområdet
-TARGET_LOCATIONS = [
-    "arvika", "eda", "årjäng", "töcksfors", 
-    "charlottenberg", "jössefors", "klässbol", "sulvik"
-]
+# Sökord som måste matcha som exakta, fristående ord
+KEYWORDS = ["arvika", "eda", "årjäng", "värmland"]
 
 seen_event_ids = set()
 
-def matches_target_location(text):
+def matches_keyword(text):
     """
-    Kollar om någon av orterna finns som ett FRISTÅENDE ord i texten.
-    Säkerställer att t.ex. 'eda' inte matchar 'nedan' eller 'fredag'.
+    Kollar om något av sökorden finns som ett FRISTÅENDE ord i texten.
+    Säkerställer att 'eda' inte matchar 'nedan' eller 'fredag'.
     """
+    if not text:
+        return False
     text_lower = text.lower()
-    for loc in TARGET_LOCATIONS:
-        # \b står för word boundary (ordgräns)
-        if re.search(rf"\b{re.escape(loc)}\b", text_lower):
+    for kw in KEYWORDS:
+        if re.search(rf"\b{re.escape(kw)}\b", text_lower):
             return True
     return False
 
 def check_police_events():
+    is_first_run = True  # Förhindrar att gamla notiser skickas igen vid omstart av Render
+
     while True:
         try:
-            # Om inte miljövariabeln är satt än, vänta
             if not MAKE_WEBHOOK_URL:
                 print("Väntar på att MAKE_WEBHOOK_URL ska konfigureras...")
                 time.sleep(10)
@@ -52,18 +49,24 @@ def check_police_events():
                 for event in events:
                     event_id = event.get("id")
                     
+                    # Hoppa över om vi redan hanterat händelsen
                     if event_id in seen_event_ids:
                         continue
                     
+                    # Vid första körningen (omstart) sparar vi bara ID:t tyst i minnet
+                    if is_first_run:
+                        seen_event_ids.add(event_id)
+                        continue
+
                     name = event.get("name", "")
                     summary = event.get("summary", "")
                     location_name = event.get("location", {}).get("name", "")
                     
-                    # 1. Matchar orter i titel, sammanfattning eller plats-fältet
+                    # Träff om Arvika, Eda, Årjäng eller Värmland finns som fristående ord
                     is_match = (
-                        matches_target_location(name) or 
-                        matches_target_location(summary) or 
-                        matches_target_location(location_name)
+                        matches_keyword(name) or 
+                        matches_keyword(summary) or 
+                        matches_keyword(location_name)
                     )
                     
                     if is_match:
@@ -80,8 +83,14 @@ def check_police_events():
                     
                     seen_event_ids.add(event_id)
                 
-                if len(seen_event_ids) > 500:
+                # Efter första varvet börjar skriptet skicka webhooks för nya händelser
+                is_first_run = False
+
+                # Säkert minnesskydd
+                if len(seen_event_ids) > 2000:
+                    seen_event_ids_list = list(seen_event_ids)
                     seen_event_ids.clear()
+                    seen_event_ids.update(seen_event_ids_list[1000:])
                     
         except Exception as e:
             print(f"Fel vid hämtning: {e}")
