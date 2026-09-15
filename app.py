@@ -18,10 +18,13 @@ TRAFIKVERKET_API_URL = "https://api.trafikinfo.trafikverket.se/v2/data.json"
 MAKE_WEBHOOK_URL = os.environ.get("MAKE_WEBHOOK_URL")
 TRAFIKVERKET_API_KEY = os.environ.get("TRAFIKVERKET_API_KEY")
 
-# Alla orter, byar och knutpunkter i Arvika, Eda och Årjängs kommuner + Värmland
-TARGET_LOCATIONS = [
-    # Kommuner & Län
-    "arvika", "eda", "årjäng", "värmland",
+# 1. Sökord för Polisen (Ren kommun- och länsnivå)
+POLICE_TARGETS = ["arvika", "eda", "årjäng", "värmland"]
+
+# 2. Sökord för Trafikverket (Specifika orter, byar och knutpunkter)
+TRAFIKVERKET_TARGETS = [
+    # Kommuner
+    "arvika", "eda", "årjäng",
     # Arvika kommun
     "jössefors", "klässbol", "sulvik", "edane", "glava", 
     "gunnarsskog", "mangskog", "ottebol", "brunskog", "högboda",
@@ -34,12 +37,12 @@ TARGET_LOCATIONS = [
 seen_police_ids = set()
 seen_trafikverket_ids = set()
 
-# --- HJÄLPFUNKTIONER ---
-def matches_keyword(text):
+# --- HJÄLPFUNKTION ---
+def matches_keywords(text, target_list):
     if not text:
         return False
     text_lower = text.lower()
-    for kw in TARGET_LOCATIONS:
+    for kw in target_list:
         if re.search(rf"\b{re.escape(kw)}\b", text_lower):
             return True
     return False
@@ -72,10 +75,11 @@ def check_police_events():
                     summary = event.get("summary", "")
                     location_name = event.get("location", {}).get("name", "")
                     
+                    # Söker enbart i Polisens sökordslista
                     is_match = (
-                        matches_keyword(name) or 
-                        matches_keyword(summary) or 
-                        matches_keyword(location_name)
+                        matches_keywords(name, POLICE_TARGETS) or 
+                        matches_keywords(summary, POLICE_TARGETS) or 
+                        matches_keywords(location_name, POLICE_TARGETS)
                     )
                     
                     if is_match:
@@ -115,7 +119,6 @@ def check_trafikverket_events():
                 time.sleep(10)
                 continue
 
-            # Hämtar alla aktuella händelser i Värmlands län (CountyNo 17)
             xml_query = f"""
             <REQUEST>
               <LOGIN authenticationkey="{TRAFIKVERKET_API_KEY}" />
@@ -162,9 +165,9 @@ def check_trafikverket_events():
                         details = dev.get("Details", "")
                         location = dev.get("LocationDescriptor", "")
 
-                        # Matchar mot alla orter och vägsträckor i dina tre kommuner
+                        # Söker enbart i Trafikverkets ortslista
                         combined_text = f"{header} {details} {location}"
-                        is_match = matches_keyword(combined_text)
+                        is_match = matches_keywords(combined_text, TRAFIKVERKET_TARGETS)
 
                         if is_match:
                             payload = {
