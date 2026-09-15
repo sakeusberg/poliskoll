@@ -2,6 +2,7 @@ import requests
 import time
 import threading
 import os
+import re
 from flask import Flask
 
 app = Flask(__name__)
@@ -15,8 +16,25 @@ POLISEN_API_URL = "https://polisen.se/api/events"
 # Hämtar länken säkert från Renders inställningar
 MAKE_WEBHOOK_URL = os.environ.get("MAKE_WEBHOOK_URL")
 
-KEYWORDS = ["arvika", "eda", "årjäng", "värmland"]
+# Specifika kommuner och orter i bevakningsområdet
+TARGET_LOCATIONS = [
+    "arvika", "eda", "årjäng", "töcksfors", 
+    "charlottenberg", "jössefors", "klässbol", "sulvik"
+]
+
 seen_event_ids = set()
+
+def matches_target_location(text):
+    """
+    Kollar om någon av orterna finns som ett FRISTÅENDE ord i texten.
+    Säkerställer att t.ex. 'eda' inte matchar 'nedan' eller 'fredag'.
+    """
+    text_lower = text.lower()
+    for loc in TARGET_LOCATIONS:
+        # \b står för word boundary (ordgräns)
+        if re.search(rf"\b{re.escape(loc)}\b", text_lower):
+            return True
+    return False
 
 def check_police_events():
     while True:
@@ -37,10 +55,16 @@ def check_police_events():
                     if event_id in seen_event_ids:
                         continue
                     
-                    name = event.get("name", "").lower()
-                    summary = event.get("summary", "").lower()
+                    name = event.get("name", "")
+                    summary = event.get("summary", "")
+                    location_name = event.get("location", {}).get("name", "")
                     
-                    is_match = any(word in name or word in summary for word in KEYWORDS)
+                    # 1. Matchar orter i titel, sammanfattning eller plats-fältet
+                    is_match = (
+                        matches_target_location(name) or 
+                        matches_target_location(summary) or 
+                        matches_target_location(location_name)
+                    )
                     
                     if is_match:
                         payload = {
